@@ -8,13 +8,13 @@ FROM node:20-alpine AS build
 WORKDIR /app
 
 # Install deps first (better layer caching)
-COPY package.json package-lock.json* ./
+COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 
 # Copy source and build
-COPY tsconfig.json vite.config.ts vitest.config.ts tailwind.config.js postcss.config.js index.html ./
-COPY public ./public
-COPY src ./src
+COPY frontend/tsconfig.json frontend/vite.config.ts frontend/vitest.config.ts frontend/tailwind.config.js frontend/postcss.config.js frontend/index.html ./
+COPY frontend/public ./public
+COPY frontend/src ./src
 
 # Build args for env vars baked at build time
 ARG VITE_API_URL=http://backend:8000
@@ -38,7 +38,7 @@ RUN npm run build
 FROM nginx:1.27-alpine AS runtime
 
 # Copy hardened root nginx config
-COPY nginx.conf /etc/nginx/nginx.conf
+COPY frontend/nginx.conf /etc/nginx/nginx.conf
 
 # Copy the built bundle from the build stage
 COPY --from=build /app/dist /usr/share/nginx/html

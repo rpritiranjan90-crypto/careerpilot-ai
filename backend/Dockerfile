@@ -7,7 +7,7 @@ FROM python:3.11-slim AS builder
 WORKDIR /app
 
 # Install deps first (better layer caching)
-COPY pyproject.toml ./
+COPY backend/pyproject.toml ./pyproject.toml
 
 # Extract dependency list from PEP 621 pyproject.toml using standard library tomllib
 RUN python -c "import tomllib; reqs = tomllib.load(open('pyproject.toml', 'rb'))['project']['dependencies']; open('/tmp/reqs.txt', 'w').write('\n'.join(reqs))"
@@ -30,10 +30,11 @@ COPY --from=builder /wheels /wheels
 RUN pip install --no-cache-dir --no-index --find-links=/wheels /wheels/*.whl \
     && rm -rf /wheels
 
-# Copy application source and configuration
-COPY --chown=appuser:appgroup app ./app
-COPY --chown=appuser:appgroup alembic ./alembic
-COPY --chown=appuser:appgroup alembic.ini .env.example ./
+# Copy application source and configuration (build context is repo root)
+COPY --chown=appuser:appgroup backend/app ./app
+COPY --chown=appuser:appgroup backend/alembic ./alembic
+COPY --chown=appuser:appgroup backend/alembic.ini ./alembic.ini
+COPY --chown=appuser:appgroup backend/.env.example ./.env.example
 
 # Create upload directory and set ownership
 RUN mkdir -p /app/uploads && chown -R appuser:appgroup /app
