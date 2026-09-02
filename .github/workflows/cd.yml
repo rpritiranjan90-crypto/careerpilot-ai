@@ -1,0 +1,221 @@
+name: CD
+
+on:
+  # Triggered by a successful CI on main
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # Allow manual deploys from the Actions tab
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        default: staging
+        options:
+          - staging
+          - production
+      version:
+        description: "Version tag (e.g. 1.2.3). Leave blank to use the short SHA."
+        required: false
+        type: string
+
+concurrency:
+  group: deploy-${{ github.event.inputs.environment || 'staging' }}
+  cancel-in-progress: false
+
+# Workflow-level least privilege: build/push images only need read+write for
+# packages; deploy steps only need read+write for contents.
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # ----------------------------------------------------------------------
+  # 1. Build & push images to a registry (GHCR by default)
+  # ----------------------------------------------------------------------
+  publish:
+    name: Build & Push images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      backend_image: ${{ steps.meta-backend.outputs.image }}
+      frontend_image: ${{ steps.meta-frontend.outputs.image }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@0c97f0f3b2086e15f2a9e4b9ba4b0e1f4d9e3e5e # v3.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db # v3.6.1
+
+      - name: Compute version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Backend image metadata
+        id: meta-backend
+        uses: docker/metadata-action@fa15a8b6f7299e27b5aa5a40cce2b8e76a0b5c7c # v5.5.1
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/careerpilot-backend
+          tags: |
+            type=sha,prefix=ci-
+            type=ref,event=branch
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Frontend image metadata
+        id: meta-frontend
+        uses: docker/metadata-action@fa15a8b6f7299e27b5aa5a40cce2b8e76a0b5c7c # v5.5.1
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/careerpilot-frontend
+          tags: |
+            type=sha,prefix=ci-
+            type=ref,event=branch
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build & push backend
+        uses: docker/build-push-action@5cd11c3a4ced054e52742c1fd9c931a7619093cd # v6.7.0
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push frontend
+        uses: docker/build-push-action@5cd11c3a4ced054e52742c1fd9c931a7619093cd # v6.7.0
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          build-args: |
+            VITE_API_URL=${{ vars.VITE_API_URL || 'http://localhost:8000' }}
+            VITE_SUPABASE_URL=${{ vars.VITE_SUPABASE_URL || '' }}
+            VITE_SUPABASE_ANON_KEY=${{ vars.VITE_SUPABASE_ANON_KEY || '' }}
+            VITE_APP_NAME=CareerPilot AI
+            VITE_APP_VERSION=${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Scan the just-built images for CRITICAL CVEs. Block the pipeline if
+      # a critical CVE is found; teams can patch and re-run.
+      - name: Trivy image scan (backend)
+        uses: aquasecurity/trivy-action@18f9ad6e4f74d05488e84aac4ec097e1c5958ca8 # 0.24.0
+        with:
+          image-ref: ${{ steps.meta-backend.outputs.image }}
+          severity: CRITICAL
+          exit-code: "1"
+          format: sarif
+          output: trivy-backend.sarif
+
+      - name: Trivy image scan (frontend)
+        uses: aquasecurity/trivy-action@18f9ad6e4f74d05488e84aac4ec097e1c5958ca8 # 0.24.0
+        with:
+          image-ref: ${{ steps.meta-frontend.outputs.image }}
+          severity: CRITICAL
+          exit-code: "1"
+          format: sarif
+          output: trivy-frontend.sarif
+
+      - name: Upload Trivy SARIF (backend)
+        if: always()
+        uses: github/codeql-action/upload-sarif@4e828ff8d448a8a6e532957b1811f387a63867e8 # v3.25.7
+        with:
+          sarif_file: trivy-backend.sarif
+        continue-on-error: true
+
+      - name: Upload Trivy SARIF (frontend)
+        if: always()
+        uses: github/codeql-action/upload-sarif@4e828ff8d448a8a6e532957b1811f387a63867e8 # v3.25.7
+        with:
+          sarif_file: trivy-frontend.sarif
+        continue-on-error: true
+
+  # ------------------------------------------------------------------
+  # 2. Deploy to staging (auto, on main)
+  # ------------------------------------------------------------------
+  deploy-staging:
+    name: Deploy to staging
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.ref == 'refs/heads/main'
+    needs: publish
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_URL || 'https://staging.careerpilot.example' }}
+    permissions:
+      contents: read  # to pull the repo on the target host
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@e3357e3a13e2c3e2ae6b68cf8c7b0e1f3e6e7d4e # v1.0.0
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            cd ~/careerpilot
+            git pull --ff-only
+            echo "BACKEND_IMAGE=${{ needs.publish.outputs.backend_image }}" >> .env
+            echo "FRONTEND_IMAGE=${{ needs.publish.outputs.frontend_image }}" >> .env
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans
+            docker system prune -f
+
+  # ------------------------------------------------------------------
+  # 3. Deploy to production (manual only)
+  # ------------------------------------------------------------------
+  deploy-production:
+    name: Deploy to production
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'
+    needs: publish
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_URL || 'https://careerpilot.example' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@e3357e3a13e2c3e2ae6b68cf8c7b0e1f3e6e7d4e # v1.0.0
+        with:
+          host: ${{ secrets.PRODUCTION_HOST }}
+          username: ${{ secrets.PRODUCTION_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          script: |
+            cd ~/careerpilot
+            git pull --ff-only
+            echo "BACKEND_IMAGE=${{ needs.publish.outputs.backend_image }}" >> .env
+            echo "FRONTEND_IMAGE=${{ needs.publish.outputs.frontend_image }}" >> .env
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans
+            docker system prune -f
+
+      - name: Create GitHub release
+        if: startsWith(github.event.inputs.version || '', 'v')
+        uses: softprops/action-gh-release@de7c2e8cfe96e1aff3e8f5c68a4de0d3ddcba9aa # v2.0.1
+        with:
+          tag_name: ${{ github.event.inputs.version }}
+          generate_release_notes: true
+        permissions:
+          contents: write

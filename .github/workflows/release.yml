@@ -1,0 +1,37 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"   # tags like v1.0.0, v1.2.3, v2.0.0-beta.1
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Collect commits since the last tag
+          PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || git rev-list --max-parents=0 HEAD)
+          echo "## Changes since ${PREV}" > CHANGELOG_TMP.md
+          echo "" >> CHANGELOG_TMP.md
+          git log ${PREV}..HEAD --pretty=format:"- %s (%h)" >> CHANGELOG_TMP.md
+          echo "" >> CHANGELOG_TMP.md
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          body_path: CHANGELOG_TMP.md
+          fail_on_unmatched_files: false

@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: careerpilot-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    plan: free
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: false
+      - key: DEV_TOKEN_AUTH
+        value: false
+      - key: AI_FALLBACK_ON_ERROR
+        value: true
+      - key: RATE_LIMIT_ANALYZE
+        value: 20
+      - key: RATE_LIMIT_GENERAL
+        value: 120
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false

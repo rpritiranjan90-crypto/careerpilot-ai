@@ -1,0 +1,50 @@
+# CareerPilot AI - Production Docker Compose override
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Differences from dev:
+#   - Frontend build uses production env vars (no VITE_ dev defaults)
+#   - Backend runs without debug, with stricter environment defaults
+#   - DEV_TOKEN_AUTH is forced to false in production
+#   - Health checks still enabled so orchestrators (ECS, K8s) can probe
+
+services:
+  frontend:
+    build:
+      args:
+        NODE_ENV: production
+        VITE_API_URL: ${VITE_API_URL}
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
+        VITE_APP_NAME: "CareerPilot AI"
+        VITE_APP_VERSION: "1.0.0"
+        VITE_DEV_TOKEN_AUTH: "false"
+    environment:
+      - NODE_ENV=production
+    # No volume mounts in prod – image is immutable
+    ports: []  # Production typically sits behind a reverse proxy / load balancer
+
+  backend:
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      # CRITICAL: explicitly disable dev token auth in production
+      - DEV_TOKEN_AUTH=false
+      # CORS should only list your actual domain(s) in production
+      - CORS_ORIGINS=${CORS_ORIGINS:-https://your-domain.com}
+      # JWT secret is required in production; the config validator will
+      # refuse to start if this is missing when ENVIRONMENT=production
+      - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - DATABASE_URL=${DATABASE_URL}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
+      - UPLOAD_DIR=/app/uploads
+      - MAX_UPLOAD_SIZE_MB=5
+      - ALLOWED_EXTENSIONS=pdf,docx,txt
+      - RATE_LIMIT_ANALYZE=20
+      - RATE_LIMIT_INTERVIEW=30
+    # Remove any development volume mounts
+    volumes: []
+    ports: []  # Production typically sits behind a reverse proxy / load balancer

@@ -1,0 +1,36 @@
+# EditorConfig for consistent editor settings across the project.
+# https://editorconfig.org
+
+root = true
+
+[*]
+charset             = utf-8
+end_of_line         = lf
+indent_style        = space
+indent_size         = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{json,jsonc,json5}]
+indent_size = 2
+
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.{js,jsx,mjs,cjs,ts,tsx}]
+indent_size = 2
+
+[*.{css,scss}]
+indent_size = 2
+
+[*.{html,svg}]
+indent_size = 2
+
+[Dockerfile*]
+indent_size = 4
+
+[*.md]
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab

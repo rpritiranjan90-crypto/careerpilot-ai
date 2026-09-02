@@ -1,0 +1,44 @@
+# Exclude VCS / build artifacts / local config from the build context
+.git
+.gitignore
+.github
+.gitattributes
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.eggs
+*.egg-info
+.venv
+venv
+env/
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.coverage
+htmlcov
+*.cover
+
+# Local environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Uploaded user files (never bake into image)
+uploads/
+
+# Tests are not needed in the runtime image (kept for local test runs)
+# tests/
+
+# Docs / IDE
+README.md
+.vscode
+.idea
+*.swp
+.DS_Store
+Thumbs.db
+
+# Frontend (does not belong in the backend image)
+../frontend

@@ -1,0 +1,67 @@
+groups:
+  - name: careerpilot
+    rules:
+      # High error rate
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_request_errors_total[5m]))
+            /
+            sum(rate(http_requests_total[5m]))
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate on CareerPilot API (>5%)"
+
+      # Backend down
+      - alert: BackendDown
+        expr: up{job="careerpilot-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "CareerPilot backend is unreachable"
+
+      # High P95 latency
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le)
+          ) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "P95 latency > 2s on CareerPilot API"
+
+      # Rate limit pressure (clients hammering)
+      - alert: RateLimitPressure
+        expr: sum(rate(http_request_errors_total{status="429"}[15m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Significant rate-limit pressure on CareerPilot"
+
+      # High 5xx ratio
+      - alert: ServerErrors
+        expr: |
+          sum(rate(http_request_errors_total{status=~"5.."}[5m]))
+          /
+          sum(rate(http_requests_total[5m])) > 0.01
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Server-error rate above 1%"
+
+      # Database connection failures (heuristic — repeated 503s)
+      - alert: DatabaseUnreachable
+        expr: sum(rate(http_request_errors_total{status="503"}[5m])) > 0.5
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Database likely unreachable"

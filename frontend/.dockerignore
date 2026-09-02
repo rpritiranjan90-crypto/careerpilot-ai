@@ -1,0 +1,36 @@
+# Exclude VCS / build artifacts / local config from the build context
+.git
+.gitignore
+.github
+.gitattributes
+
+# Node
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Build outputs
+dist
+build
+*.local
+*.tsbuildinfo
+
+# Local environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Tests are run separately
+coverage
+
+# IDE / OS
+.vscode
+.idea
+*.swp
+.DS_Store
+Thumbs.db
+
+# Backend (not needed here)
+../backend

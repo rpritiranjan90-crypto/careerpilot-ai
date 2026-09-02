@@ -1,0 +1,139 @@
+# CareerPilot AI - Docker Compose
+# One command to spin up the full local development environment.
+#
+# Usage:
+#   Development:  docker-compose up          (rebuilds, hot-reloads)
+#   Production:    docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#   Tear down:    docker-compose down -v
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Frontend (React + Vite, served via Nginx)
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-}
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+        VITE_DEV_TOKEN_AUTH: ${DEV_TOKEN_AUTH:-true}
+        VITE_APP_NAME: "CareerPilot AI"
+        VITE_APP_VERSION: "1.0.0"
+    container_name: careerpilot-frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Backend (FastAPI + Uvicorn)
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: careerpilot-backend
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      # Application
+      - APP_NAME=CareerPilot AI
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - DEBUG=${DEBUG:-false}
+      # CORS – allow the Nginx container hostname so reverse-proxy works
+      - CORS_ORIGINS=http://frontend:80,http://localhost:3000
+      # Auth – use DEV_TOKEN_AUTH=true for local testing without a Supabase project.
+      # Set SUPABASE_JWT_SECRET and DEV_TOKEN_AUTH=false for production.
+      - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET:-}
+      - DEV_TOKEN_AUTH=${DEV_TOKEN_AUTH:-true}
+      # Database (PostgreSQL running in the db service below)
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/careerpilot}
+      # Ollama (optional – enable if you have a local Ollama instance)
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
+      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-120}
+      # File uploads
+      - UPLOAD_DIR=/app/uploads
+      - MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB:-5}
+      - ALLOWED_EXTENSIONS=pdf,docx,txt
+      # Rate limits
+      - RATE_LIMIT_ANALYZE=${RATE_LIMIT_ANALYZE:-20}
+      - RATE_LIMIT_INTERVIEW=${RATE_LIMIT_INTERVIEW:-30}
+    volumes:
+      # Mount uploads as a named volume so they persist between runs
+      - uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Database (PostgreSQL 16 – local persistence)
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    container_name: careerpilot-db
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=careerpilot
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Ollama (Local AI – optional, enable to run AI locally for free)
+  # ---------------------------------------------------------------------------
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: careerpilot-ollama
+  #   ports:
+  #     - "${OLLAMA_PORT:-11434}:11434"
+  #   volumes:
+  #     - ollama:/root/.ollama
+  #   # GPU support (uncomment for NVIDIA GPUs)
+  #   # deploy:
+  #   #   resources:
+  #   #     reservations:
+  #   #       devices:
+  #   #         - driver: nvidia
+  #   #           count: all
+  #   #           capabilities: [gpu]
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #   restart: unless-stopped
+
+volumes:
+  uploads:
+    name: careerpilot-uploads
+  pgdata:
+    name: careerpilot-pgdata
+  # ollama:
+  #   name: careerpilot-ollama

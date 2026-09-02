@@ -1,0 +1,27 @@
+# Root .dockerignore – shared across the whole build context when building
+# from the repo root (e.g. for a monorepo-level Dockerfile in the future).
+
+.git
+.gitignore
+.github
+*.md
+node_modules
+__pycache__
+*.pyc
+.env
+.env.local
+.env.*.local
+*.log
+logs/
+uploads/
+coverage/
+.pytest_cache/
+.mypy_cache/
+dist/
+build/
+*.egg-info/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
