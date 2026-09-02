@@ -76,6 +76,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         connect_src_parts = ["'self'"]
         if backend_host:
             connect_src_parts.append(backend_host)
+        # Supabase domain — required for auth API calls from the browser
+        connect_src_parts.append("https://eothvqvygmldgygjkfke.supabase.co")
         # Allow localhost for local development (dev server, Ollama on loopback)
         connect_src_parts.append("http://localhost:*")
         connect_src = " ".join(connect_src_parts)
