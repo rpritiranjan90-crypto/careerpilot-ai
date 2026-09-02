@@ -49,7 +49,7 @@ services:
 
       # CORS — allow the frontend static site
       - key: CORS_ORIGINS
-        sync: false    # Set to your frontend URL, e.g. https://careerpilot.onrender.com
+        value: https://careerpilot-frontend.onrender.com,https://careerpilot-frontend-q5ur.onrender.com
 
       # Render assigns PORT automatically
       - key: PORT
@@ -88,7 +88,7 @@ services:
     region: singapore
     envVars:
       - key: VITE_API_URL
-        sync: false    # Set to your backend URL, e.g. https://careerpilot-api.onrender.com
+        value: https://careerpilot-api-q5ur.onrender.com
       - key: VITE_SUPABASE_URL
         value: https://eothvqvygmldgygjkfke.supabase.co
       - key: VITE_SUPABASE_ANON_KEY
