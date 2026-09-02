@@ -49,7 +49,7 @@ services:
 
       # CORS — allow the frontend static site
       - key: CORS_ORIGINS
-        value: https://careerpilot-frontend.onrender.com,https://careerpilot-frontend-q5ur.onrender.com
+        value: https://careerpilot-frontend-si1b.onrender.com
 
       # Render assigns PORT automatically
       - key: PORT
