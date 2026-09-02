@@ -13,7 +13,8 @@ services:
   # ---------------------------------------------------------------------------
   # Backend — FastAPI + Uvicorn (Docker)
   # ---------------------------------------------------------------------------
-  - name: careerpilot-api
+  - type: web
+    name: careerpilot-api
     dockerfilePath: ./backend/Dockerfile
     plan: free
     region: singapore        # closest to Supabase ap-south-1
@@ -78,7 +79,8 @@ services:
   # ---------------------------------------------------------------------------
   # Frontend — React + Vite (static site via nginx in Docker)
   # ---------------------------------------------------------------------------
-  - name: careerpilot-frontend
+  - type: web
+    name: careerpilot-frontend
     dockerfilePath: ./frontend/Dockerfile
     plan: free
     region: singapore
