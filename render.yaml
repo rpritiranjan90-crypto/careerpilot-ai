@@ -86,10 +86,6 @@ services:
     dockerfilePath: ./frontend/Dockerfile
     plan: free
     region: singapore
-    headers:
-      - path: /*
-        name: Content-Security-Policy
-        value: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https://eothvqvygmldgygjkfke.supabase.co; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
     envVars:
       - key: VITE_API_URL
         sync: false    # Set to your backend URL, e.g. https://careerpilot-api.onrender.com
