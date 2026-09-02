@@ -1,29 +1,101 @@
+# CareerPilot AI — Render Blueprint
+# Deploys backend and frontend via Dockerfiles.
+#
+# Render reads this file and creates both services automatically.
+# Environment variables marked sync:false must be set in the Render dashboard.
+#
+# Usage:
+#   1. Push to GitHub
+#   2. Connect the repo to Render at https://dashboard.render.com/blueprints
+#   3. Set all sync:false env vars in the Render dashboard before deploying
+
 services:
-  - type: web
-    name: careerpilot-api
-    runtime: python
-    rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+  # ---------------------------------------------------------------------------
+  # Backend — FastAPI + Uvicorn (Docker)
+  # ---------------------------------------------------------------------------
+  - name: careerpilot-api
+    dockerfilePath: ./backend/Dockerfile
     plan: free
+    region: singapore        # closest to Supabase ap-south-1
+    healthCheckPath: /health
     envVars:
+      # Application
       - key: ENVIRONMENT
         value: production
       - key: DEBUG
         value: false
+
+      # Security — DEV_TOKEN_AUTH must be false in production
       - key: DEV_TOKEN_AUTH
         value: false
-      - key: AI_FALLBACK_ON_ERROR
-        value: true
-      - key: RATE_LIMIT_ANALYZE
-        value: 20
-      - key: RATE_LIMIT_GENERAL
-        value: 120
-      - key: DATABASE_URL
-        sync: false
+
+      # Auth (set in Render dashboard — sync:false)
       - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: SUPABASE_JWT_SECRET
         sync: false
-      - key: CORS_ORIGINS
+
+      # Database (set in Render dashboard — sync:false)
+      - key: DATABASE_URL
         sync: false
+      - key: DB_SCHEMA
+        value: careerpilot
+
+      # CORS — allow the frontend static site
+      - key: CORS_ORIGINS
+        sync: false    # Set to your frontend URL, e.g. https://careerpilot.onrender.com
+
+      # Render assigns PORT automatically
+      - key: PORT
+        sync: false
+
+      # Ollama — set sync:false to configure your Ollama endpoint
+      - key: OLLAMA_BASE_URL
+        value: http://localhost:11434
+      - key: OLLAMA_MODEL
+        value: llama3.2:3b
+      - key: OLLAMA_TIMEOUT
+        value: 120
+
+      # File uploads
+      - key: UPLOAD_DIR
+        value: /app/uploads
+      - key: MAX_UPLOAD_SIZE_MB
+        value: 5
+      - key: ALLOWED_EXTENSIONS
+        value: pdf,docx,txt
+
+      # Rate limits
+      - key: RATE_LIMIT_ANALYZE
+        value: 20
+      - key: RATE_LIMIT_INTERVIEW
+        value: 30
+
+  # ---------------------------------------------------------------------------
+  # Frontend — React + Vite (static site via nginx in Docker)
+  # ---------------------------------------------------------------------------
+  - name: careerpilot-frontend
+    dockerfilePath: ./frontend/Dockerfile
+    plan: free
+    region: singapore
+    headers:
+      - path: /*
+        name: Content-Security-Policy
+        value: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https://eothvqvygmldgygjkfke.supabase.co; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+    envVars:
+      - key: VITE_API_URL
+        sync: false    # Set to your backend URL, e.g. https://careerpilot-api.onrender.com
+      - key: VITE_SUPABASE_URL
+        value: https://eothvqvygmldgygjkfke.supabase.co
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false    # Set in Render dashboard
+      - key: VITE_DEV_TOKEN_AUTH
+        value: false
+      - key: VITE_APP_NAME
+        value: CareerPilot AI
+      - key: VITE_APP_VERSION
+        value: 1.0.0
