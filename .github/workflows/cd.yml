@@ -48,7 +48,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@0c97f0f3b2086e15f2a9e4b9ba4b0e1f4d9e3e5e # v3.2.0
@@ -58,7 +58,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db # v3.6.1
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Compute version
         id: version
@@ -141,14 +141,14 @@ jobs:
 
       - name: Upload Trivy SARIF (backend)
         if: always()
-        uses: github/codeql-action/upload-sarif@4e828ff8d448a8a6e532957b1811f387a63867e8 # v3.25.7
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v3.25.7
         with:
           sarif_file: trivy-backend.sarif
         continue-on-error: true
 
       - name: Upload Trivy SARIF (frontend)
         if: always()
-        uses: github/codeql-action/upload-sarif@4e828ff8d448a8a6e532957b1811f387a63867e8 # v3.25.7
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v3.25.7
         with:
           sarif_file: trivy-frontend.sarif
         continue-on-error: true
