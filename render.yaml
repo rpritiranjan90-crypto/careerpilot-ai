@@ -15,6 +15,7 @@ services:
   # ---------------------------------------------------------------------------
   - type: web
     name: careerpilot-api
+    runtime: docker
     dockerfilePath: ./backend/Dockerfile
     plan: free
     region: singapore        # closest to Supabase ap-south-1
@@ -81,6 +82,7 @@ services:
   # ---------------------------------------------------------------------------
   - type: web
     name: careerpilot-frontend
+    runtime: docker
     dockerfilePath: ./frontend/Dockerfile
     plan: free
     region: singapore
