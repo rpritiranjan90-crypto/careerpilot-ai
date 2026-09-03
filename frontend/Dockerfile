@@ -35,7 +35,7 @@ RUN npm run build
 
 
 # ---------- Runtime stage ----------
-FROM nginx:1.27-alpine AS runtime
+FROM nginx:1.31-alpine AS runtime
 
 # Copy hardened root nginx config
 COPY frontend/nginx.conf /etc/nginx/nginx.conf
