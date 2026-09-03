@@ -13,8 +13,8 @@ services:
   # ---------------------------------------------------------------------------
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: frontend/Dockerfile
       args:
         VITE_API_URL: ${VITE_API_URL:-}
         VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
@@ -41,8 +41,8 @@ services:
   # ---------------------------------------------------------------------------
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: careerpilot-backend
     ports:
       - "${BACKEND_PORT:-8000}:8000"
