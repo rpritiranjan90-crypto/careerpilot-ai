@@ -1,11 +1,14 @@
 """Authentication helpers using Supabase JWTs.
 
-Supabase signs its access tokens with HS256 using the project's JWT secret
-(set in the Supabase dashboard under Project Settings → API → JWT Secret).
-The secret is verified on every request via the Authorization: Bearer header.
+Supabase signs access tokens with either HS256 (legacy) or ES256 (current
+default for new projects). The backend supports both:
+  - HS256: verified using the project's JWT secret
+    (Supabase dashboard → Project Settings → API → JWT Secret)
+  - ES256: verified using the public keys fetched from Supabase's
+    JWKS endpoint (https://<project>.supabase.co/auth/v1/.well-known/jwks.json)
 
 In production:
-  - SUPABASE_JWT_SECRET must be set
+  - SUPABASE_JWT_SECRET must be set (for HS256 fallback)
   - DEV_TOKEN_AUTH must be False (default)
 
 In development, if SUPABASE_JWT_SECRET is not set and DEV_TOKEN_AUTH is True,
@@ -15,8 +18,10 @@ the server accepts "Bearer <user_id>" tokens. This is for local testing only.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
+import httpx
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -30,26 +35,134 @@ logger = logging.getLogger("app.auth")
 security = HTTPBearer(auto_error=False)
 
 
+# ---------------------------------------------------------------------------
+# JWKS cache for ES256 verification
+# ---------------------------------------------------------------------------
+
+_jwks_cache: dict[str, Any] = {"keys": None, "fetched_at": 0.0}
+_JWKS_TTL_SECONDS = 3600  # 1 hour
+
+
+def _get_jwks_keys(force_refresh: bool = False) -> list[dict[str, Any]]:
+    """Fetch Supabase JWKS keys (cached)."""
+    now = time.monotonic()
+    if (
+        not force_refresh
+        and _jwks_cache["keys"] is not None
+        and (now - _jwks_cache["fetched_at"]) < _JWKS_TTL_SECONDS
+    ):
+        return _jwks_cache["keys"]
+
+    if not settings.supabase_url:
+        return []
+
+    jwks_url = f"{settings.supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            resp = client.get(jwks_url)
+        resp.raise_for_status()
+        keys = resp.json().get("keys", [])
+        _jwks_cache["keys"] = keys
+        _jwks_cache["fetched_at"] = now
+        logger.info("Loaded %d JWKS keys from Supabase", len(keys))
+        return keys
+    except Exception as exc:
+        logger.warning("Failed to fetch JWKS from %s: %s", jwks_url, exc)
+        return _jwks_cache.get("keys") or []
+
+
 def _decode_supabase_jwt(token: str) -> dict[str, Any]:
     """Verify a Supabase JWT and return its claims.
 
-    Supabase tokens are HS256-signed with the project's JWT secret.
+    Supports both HS256 (legacy, uses JWT secret) and ES256 (current default,
+    uses JWKS public keys).
+
     Claims verified:
-      - signature (HS256 with supabase_jwt_secret)
+      - signature (HS256 with secret, or ES256 with JWKS)
       - exp (expiration)
+      - aud (must be "authenticated")
       - sub (user id; required)
+      - iss (must match Supabase project URL)
     """
-    if not settings.supabase_jwt_secret:
+    if not settings.supabase_jwt_secret and not settings.supabase_url:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Server auth is not configured (SUPABASE_JWT_SECRET missing)",
+            detail="Server auth is not configured (Supabase env vars missing)",
+        )
+
+    # Inspect the token header to determine the algorithm
+    try:
+        unverified_header = jwt.get_unverified_header(token)
+    except jwt.InvalidTokenError as exc:
+        logger.info("Could not parse JWT header: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
+    algorithm = unverified_header.get("alg", "HS256")
+    key_id = unverified_header.get("kid")
+
+    # Pick the key based on the algorithm
+    key: str | None = None
+    algorithms: list[str] = []
+
+    if algorithm == "HS256":
+        if not settings.supabase_jwt_secret:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="HS256 token received but SUPABASE_JWT_SECRET is not configured",
+            )
+        key = settings.supabase_jwt_secret
+        algorithms = ["HS256"]
+    elif algorithm in ("ES256", "RS256"):
+        keys = _get_jwks_keys()
+        if not keys:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Could not fetch JWKS keys for token verification",
+            )
+        # Find the key by kid
+        for k in keys:
+            if k.get("kid") == key_id:
+                if algorithm == "ES256":
+                    # PyJWT accepts the JWK dict directly for ES256
+                    key = jwt.algorithms.ECAlgorithm.from_jwk(k)  # type: ignore[arg-type]
+                else:
+                    key = jwt.algorithms.RSAAlgorithm.from_jwk(k)  # type: ignore[arg-type]
+                break
+        if key is None:
+            # Refresh JWKS in case the key was rotated
+            keys = _get_jwks_keys(force_refresh=True)
+            for k in keys:
+                if k.get("kid") == key_id:
+                    if algorithm == "ES256":
+                        key = jwt.algorithms.ECAlgorithm.from_jwk(k)  # type: ignore[arg-type]
+                    else:
+                        key = jwt.algorithms.RSAAlgorithm.from_jwk(k)  # type: ignore[arg-type]
+                    break
+        if key is None:
+            logger.warning("No matching JWKS key for kid=%s", key_id)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        algorithms = [algorithm]
+    else:
+        logger.warning("Unsupported JWT algorithm: %s", algorithm)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     try:
         claims = jwt.decode(
             token,
-            settings.supabase_jwt_secret,
-            algorithms=["HS256"],
+            key,
+            algorithms=algorithms,
             audience="authenticated",
             options={
                 "require": ["exp", "sub", "aud"],
@@ -116,7 +229,7 @@ def verify_user(
             detail="Invalid authentication token",
         )
 
-    if settings.supabase_jwt_secret:
+    if settings.supabase_jwt_secret or settings.supabase_url:
         claims = _decode_supabase_jwt(token)
     elif settings.dev_token_auth:
         if token.count(".") == 2:
