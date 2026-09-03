@@ -17,6 +17,9 @@ services:
     name: careerpilot-api
     runtime: docker
     dockerfilePath: ./backend/Dockerfile
+    buildArgs:
+      - key: VITE_API_URL
+        value: https://careerpilot-api-q5ur.onrender.com
     plan: free
     region: singapore        # closest to Supabase ap-south-1
     healthCheckPath: /health
@@ -53,6 +56,10 @@ services:
 
       # Render assigns PORT automatically
       - key: PORT
+        sync: false
+
+      # Sentry error tracking (sync:false - set in Render dashboard)
+      - key: SENTRY_DSN
         sync: false
 
       # Ollama — set sync:false to configure your Ollama endpoint

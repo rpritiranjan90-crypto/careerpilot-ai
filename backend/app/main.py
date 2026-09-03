@@ -17,8 +17,10 @@ from app.api.metrics import router as metrics_router
 from app.core.config import settings
 from app.core.database import get_engine
 from app.core.logging import get_request_id, setup_logging
+from app.core.sentry import init_sentry
 
 setup_logging()
+init_sentry()
 logger = logging.getLogger("app.startup")
 
 
