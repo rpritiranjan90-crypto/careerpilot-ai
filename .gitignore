@@ -45,3 +45,5 @@ htmlcov/
 
 # Backend
 backend/.env
+careerpilot_backup_*.sql 
+*.sql.gpg 

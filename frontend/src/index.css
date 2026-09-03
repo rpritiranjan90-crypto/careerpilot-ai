@@ -146,3 +146,23 @@ button:disabled {
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* Print styles for PDF report export */
+@media print {
+  nav, footer, .no-print, button:not(.print-include), .skip-link {
+    display: none !important;
+  }
+  body {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 11pt;
+  }
+  .print-break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .shadow-xs, .shadow-sm, .shadow-md, .shadow-lg, .shadow-2xs {
+    box-shadow: none !important;
+    border: 1px solid #cbd5e1 !important;
+  }
+}

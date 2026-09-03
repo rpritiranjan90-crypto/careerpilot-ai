@@ -43,8 +43,18 @@ _jwks_cache: dict[str, Any] = {"keys": None, "fetched_at": 0.0}
 _JWKS_TTL_SECONDS = 3600  # 1 hour
 
 
-def _get_jwks_keys(force_refresh: bool = False) -> list[dict[str, Any]]:
+def _get_jwks_keys(base_url: str | None = None, force_refresh: bool = False) -> list[dict[str, Any]]:
     """Fetch Supabase JWKS keys (cached)."""
+    target_url = base_url or settings.supabase_url
+    if not target_url:
+        return []
+
+    clean_base = target_url.rstrip("/")
+    if clean_base.endswith("/auth/v1"):
+        jwks_url = f"{clean_base}/.well-known/jwks.json"
+    else:
+        jwks_url = f"{clean_base}/auth/v1/.well-known/jwks.json"
+
     now = time.monotonic()
     if (
         not force_refresh
@@ -53,10 +63,6 @@ def _get_jwks_keys(force_refresh: bool = False) -> list[dict[str, Any]]:
     ):
         return _jwks_cache["keys"]
 
-    if not settings.supabase_url:
-        return []
-
-    jwks_url = f"{settings.supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
     try:
         with httpx.Client(timeout=5.0) as client:
             resp = client.get(jwks_url)
@@ -64,7 +70,7 @@ def _get_jwks_keys(force_refresh: bool = False) -> list[dict[str, Any]]:
         keys = resp.json().get("keys", [])
         _jwks_cache["keys"] = keys
         _jwks_cache["fetched_at"] = now
-        logger.info("Loaded %d JWKS keys from Supabase", len(keys))
+        logger.info("Loaded %d JWKS keys from Supabase (%s)", len(keys), jwks_url)
         return keys
     except Exception as exc:
         logger.warning("Failed to fetch JWKS from %s: %s", jwks_url, exc)
@@ -74,7 +80,7 @@ def _get_jwks_keys(force_refresh: bool = False) -> list[dict[str, Any]]:
 def _decode_supabase_jwt(token: str) -> dict[str, Any]:
     """Verify a Supabase JWT and return its claims.
 
-    Supports both HS256 (legacy, uses JWT secret) and ES256 (current default,
+    Supports both HS256 (legacy, uses JWT secret) and ES256/RS256 (current default,
     uses JWKS public keys).
 
     Claims verified:
@@ -84,12 +90,6 @@ def _decode_supabase_jwt(token: str) -> dict[str, Any]:
       - sub (user id; required)
       - iss (must match Supabase project URL)
     """
-    if not settings.supabase_jwt_secret and not settings.supabase_url:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Server auth is not configured (Supabase env vars missing)",
-        )
-
     # Inspect the token header to determine the algorithm
     try:
         unverified_header = jwt.get_unverified_header(token)
@@ -105,7 +105,7 @@ def _decode_supabase_jwt(token: str) -> dict[str, Any]:
     key_id = unverified_header.get("kid")
 
     # Pick the key based on the algorithm
-    key: str | None = None
+    key: Any = None
     algorithms: list[str] = []
 
     if algorithm == "HS256":
@@ -117,38 +117,55 @@ def _decode_supabase_jwt(token: str) -> dict[str, Any]:
         key = settings.supabase_jwt_secret
         algorithms = ["HS256"]
     elif algorithm in ("ES256", "RS256"):
-        keys = _get_jwks_keys()
+        # Auto-discover issuer from unverified claims if SUPABASE_URL is omitted
+        token_iss = None
+        try:
+            unverified_claims = jwt.decode(token, options={"verify_signature": False})
+            token_iss = unverified_claims.get("iss")
+        except Exception:
+            pass
+
+        keys = _get_jwks_keys(base_url=settings.supabase_url or token_iss)
+        if not keys and token_iss:
+            keys = _get_jwks_keys(base_url=token_iss, force_refresh=True)
+
         if not keys:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Could not fetch JWKS keys for token verification",
+                detail="Could not fetch JWKS keys for token verification. Please configure SUPABASE_URL in your backend environment variables.",
             )
+
         # Find the key by kid
+        matching_jwk = None
         for k in keys:
             if k.get("kid") == key_id:
-                if algorithm == "ES256":
-                    # PyJWT accepts the JWK dict directly for ES256
-                    key = jwt.algorithms.ECAlgorithm.from_jwk(k)  # type: ignore[arg-type]
-                else:
-                    key = jwt.algorithms.RSAAlgorithm.from_jwk(k)  # type: ignore[arg-type]
+                matching_jwk = k
                 break
-        if key is None:
+        if matching_jwk is None:
             # Refresh JWKS in case the key was rotated
-            keys = _get_jwks_keys(force_refresh=True)
+            keys = _get_jwks_keys(base_url=settings.supabase_url or token_iss, force_refresh=True)
             for k in keys:
                 if k.get("kid") == key_id:
-                    if algorithm == "ES256":
-                        key = jwt.algorithms.ECAlgorithm.from_jwk(k)  # type: ignore[arg-type]
-                    else:
-                        key = jwt.algorithms.RSAAlgorithm.from_jwk(k)  # type: ignore[arg-type]
+                    matching_jwk = k
                     break
-        if key is None:
+        if matching_jwk is None:
             logger.warning("No matching JWKS key for kid=%s", key_id)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+
+        try:
+            pyjwk = jwt.PyJWK.from_dict(matching_jwk)
+            key = pyjwk.key
+        except Exception as exc:
+            logger.error("Failed to parse JWK key: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Invalid JWKS key format",
+            ) from exc
+
         algorithms = [algorithm]
     else:
         logger.warning("Unsupported JWT algorithm: %s", algorithm)
@@ -170,12 +187,15 @@ def _decode_supabase_jwt(token: str) -> dict[str, Any]:
                 "verify_aud": True,
             },
         )
-        # Supabase iss is always https://<project>.supabase.co
+        # Supabase iss is always https://<project>.supabase.co or https://<project>.supabase.co/auth/v1
         if settings.supabase_url:
-            expected_iss = settings.supabase_url.rstrip("/")
+            expected_prefix = settings.supabase_url.rstrip("/")
             actual_iss = claims.get("iss", "").rstrip("/")
-            if expected_iss and actual_iss and actual_iss != expected_iss:
-                raise jwt.InvalidTokenError("Unexpected issuer claim")
+            if expected_prefix and actual_iss:
+                norm_expected = expected_prefix[:-8] if expected_prefix.endswith("/auth/v1") else expected_prefix
+                norm_actual = actual_iss[:-8] if actual_iss.endswith("/auth/v1") else actual_iss
+                if norm_expected != norm_actual:
+                    raise jwt.InvalidTokenError("Unexpected issuer claim")
     except jwt.ExpiredSignatureError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -229,16 +249,19 @@ def verify_user(
             detail="Invalid authentication token",
         )
 
-    if settings.supabase_jwt_secret or settings.supabase_url:
-        claims = _decode_supabase_jwt(token)
-    elif settings.dev_token_auth:
-        if token.count(".") == 2:
+    if token.count(".") == 2:
+        if settings.supabase_jwt_secret or settings.supabase_url:
+            claims = _decode_supabase_jwt(token)
+        else:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication token",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+    elif settings.dev_token_auth:
         claims = _decode_dev_token(token)
+    elif settings.supabase_jwt_secret or settings.supabase_url:
+        claims = _decode_supabase_jwt(token)
     else:
         # No JWT secret + dev mode disabled → reject all auth
         raise HTTPException(

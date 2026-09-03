@@ -3,7 +3,7 @@
  * Verifies that the navbar links work and protected routes redirect to login.
  */
 
-import { test, expect, isSignedIn } from "./helpers";
+import { test, expect } from "./helpers";
 
 test.describe("Navigation", () => {
   test("navbar is visible on the home page", async ({ pageAsUser }) => {

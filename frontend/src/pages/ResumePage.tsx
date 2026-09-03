@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, type ChangeEvent, type DragEvent } from "react";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { ScoreCard } from "../components/ScoreCard";
@@ -60,14 +60,14 @@ export function ResumePage() {
     }
   };
 
-  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileInputChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       await handleFileProcess(file);
     }
   };
 
-  const handleDrag = (e: React.DragEvent) => {
+  const handleDrag = (e: DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (e.type === "dragenter" || e.type === "dragover") {
@@ -77,7 +77,7 @@ export function ResumePage() {
     }
   };
 
-  const handleDrop = async (e: React.DragEvent) => {
+  const handleDrop = async (e: DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);

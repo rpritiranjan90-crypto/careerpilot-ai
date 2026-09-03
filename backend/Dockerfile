@@ -41,10 +41,14 @@ RUN mkdir -p /app/uploads && chown -R appuser:appgroup /app
 
 USER appuser
 
+# Backend URL injected at build time (production)
+ARG VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL:-}
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
-    ENVIRONMENT=development \
+    ENVIRONMENT=production \
     PORT=8000
 
 EXPOSE 8000

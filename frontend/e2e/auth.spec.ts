@@ -4,7 +4,7 @@
  * unauthenticated users are redirected to /login.
  */
 
-import { test, expect, Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 
 test.describe("Authentication", () => {
   test("login page renders correctly", async ({ page }) => {

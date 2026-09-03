@@ -37,6 +37,7 @@ export default [
       ...js.configs.recommended.rules,
       ...tseslint.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
+      'no-undef': 'off',
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       'react/react-in-jsx-scope': 'off',
       'react/jsx-filename-extension': ['error', { extensions: ['.tsx'] }],

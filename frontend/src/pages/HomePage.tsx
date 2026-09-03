@@ -1,3 +1,4 @@
+import { type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "../components/Button";
 
@@ -178,7 +179,7 @@ export function HomePage() {
 }
 
 interface FeatureCardProps {
-  icon: React.ReactNode;
+  icon: ReactNode;
   title: string;
   tag: string;
   description: string;

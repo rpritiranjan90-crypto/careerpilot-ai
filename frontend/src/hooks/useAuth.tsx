@@ -39,6 +39,7 @@ interface AuthContextValue {
   isSupabaseAuth: boolean;
   signInWithEmail: (email: string, password: string) => Promise<AuthResponse>;
   signUpWithEmail: (email: string, password: string) => Promise<AuthResponse>;
+  signInWithOAuth: (provider: "google" | "github") => Promise<AuthResponse>;
   signOut: () => Promise<void>;
 }
 
@@ -272,6 +273,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const signInWithOAuth = async (
+    provider: "google" | "github"
+  ): Promise<AuthResponse> => {
+    if (!isSupabase || !supabase) {
+      return {
+        ok: false,
+        error: "Social sign-in requires a configured Supabase project.",
+      };
+    }
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: typeof window !== "undefined" ? `${window.location.origin}/resume` : undefined,
+        },
+      });
+      if (error) {
+        return { ok: false, error: error.message };
+      }
+      return { ok: true };
+    } catch {
+      return {
+        ok: false,
+        error: "Unable to initiate social login. Please try again.",
+      };
+    }
+  };
+
   const signOut = async () => {
     if (isSupabase && supabase) {
       try {
@@ -292,6 +321,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isSupabaseAuth: isSupabase,
         signInWithEmail,
         signUpWithEmail,
+        signInWithOAuth,
         signOut,
       }}
     >
@@ -309,6 +339,7 @@ export function useAuth(): AuthContextValue {
       isSupabaseAuth: false,
       signInWithEmail: async () => ({ ok: false, error: "Auth not initialized" }),
       signUpWithEmail: async () => ({ ok: false, error: "Auth not initialized" }),
+      signInWithOAuth: async () => ({ ok: false, error: "Auth not initialized" }),
       signOut: async () => {},
     };
   }
