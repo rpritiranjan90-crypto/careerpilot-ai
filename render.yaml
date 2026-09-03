@@ -62,6 +62,12 @@ services:
       - key: SENTRY_DSN
         sync: false
 
+      # Groq AI (free tier — set in Render dashboard)
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: llama-3.1-8b-instant
+
       # Ollama — set sync:false to configure your Ollama endpoint
       - key: OLLAMA_BASE_URL
         value: http://localhost:11434

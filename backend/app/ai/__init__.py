@@ -304,8 +304,12 @@ _provider: AIProvider | None = None
 def get_ai_provider() -> AIProvider:
     """Get the configured AI provider.
 
-    Returns an OllamaProvider instance that dynamically probes Ollama with TTL caching
-    and transparently falls back to deterministic analysis when Ollama is offline.
+    Priority:
+      1. Groq (cloud, free tier) if GROQ_API_KEY is set
+      2. Ollama (local) if reachable
+      3. Deterministic fallback (always available)
+
+    All providers transparently fall back to the deterministic provider on errors.
     """
     global _provider
     if _provider is not None:
@@ -313,11 +317,24 @@ def get_ai_provider() -> AIProvider:
 
     from app.core.config import settings
 
+    # Prefer Groq if API key is set
+    if settings.groq_api_key:
+        from app.ai.groq_provider import GroqProvider
+        _provider = GroqProvider(
+            api_key=settings.groq_api_key,
+            model=settings.groq_model,
+            timeout=settings.ollama_timeout,
+        )
+        logger.info("Using Groq AI provider (model=%s)", settings.groq_model)
+        return _provider
+
+    # Fall back to Ollama
     _provider = OllamaProvider(
         base_url=settings.ollama_base_url,
         model=settings.ollama_model,
         timeout=settings.ollama_timeout,
     )
+    logger.info("Using Ollama AI provider (base_url=%s)", settings.ollama_base_url)
     return _provider
 
 

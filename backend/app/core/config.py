@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     ollama_model: str = Field(default="llama3.2:3b")
     ollama_timeout: int = Field(default=120)
 
+    # Groq cloud AI (free tier — https://console.groq.com)
+    # If set, Groq is used instead of Ollama.
+    # Get your key from: https://console.groq.com/keys
+    groq_api_key: str = Field(default="")
+    groq_model: str = Field(default="llama-3.1-8b-instant")
+
     # File uploads
     upload_dir: str = Field(default="./uploads")
     max_upload_size_mb: int = Field(default=5)
